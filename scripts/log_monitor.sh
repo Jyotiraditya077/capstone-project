@@ -1,47 +1,40 @@
 #!/usr/bin/env bash
 set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../config/config.cfg"
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(dirname "$SCRIPT_DIR")"
-CONF_FILE="$ROOT_DIR/config/log_monitor.conf"
-LOG_FILE="$ROOT_DIR/logs/script_logs.txt"
-
-# Pick your log files (edit if needed)
-WATCH_FILES=(/var/log/auth.log /var/log/syslog)
-
-mkdir -p "$(dirname "$LOG_FILE")"
-
-log(){ printf "[%s] [monitor] %s\n" "$(date '+%F %T')" "$*" | tee -a "$LOG_FILE"; }
-
-# Build grep -E pattern from non-empty, non-comment lines
-build_pattern(){
-  awk 'NF && $0 !~ /^#/' "$CONF_FILE" | paste -sd'|' -
-}
-
-if [[ ! -f "$CONF_FILE" ]]; then
-  echo "Config not found: $CONF_FILE" >&2
-  exit 1
-fi
-
-PATTERN="$(build_pattern)"
-if [[ -z "${PATTERN}" ]]; then
-  echo "No patterns found in $CONF_FILE" >&2
-  exit 1
-fi
-
-log "Monitoring started."
-log "Press Ctrl+C to stop."
-
-# Optional: email alerts if 'mail' exists and ALERT_EMAIL is set
-ALERT_EMAIL="${ALERT_EMAIL:-}"   # export ALERT_EMAIL=user@example.com to enable
-
-tail -Fn0 "${WATCH_FILES[@]}" | \
-while read -r line; do
-  if grep -Eiq -- "$PATTERN" <<<"$line"; then
-    msg="ALERT: $(date '+%F %T') :: $line"
-    log "$msg"
-    if [[ -n "$ALERT_EMAIL" ]] && command -v mail >/dev/null 2>&1; then
-      printf "%s\n" "$msg" | mail -s "Log Monitor Alert" "$ALERT_EMAIL" || true
-    fi
+ALERTS=()
+for lf in $LOG_FILES; do
+  if [[ ! -f $lf ]]; then
+    echo "Warning: log file $lf not found, skipping."
+    continue
+  fi
+  matches=$(tail -n 200 "$lf" | grep -Ei "$LOG_PATTERNS" || true)
+  if [[ -n $matches ]]; then
+    ALERTS+=( "==== $lf ====
+$matches" )
   fi
 done
+
+if (( ${#ALERTS[@]} == 0 )); then
+  echo "No suspicious log entries found."
+  exit 0
+fi
+
+ALERT_BODY=$(printf "%s
+
+" "${ALERTS[@]}")
+echo -e "Log Monitor Alert:
+$ALERT_BODY"
+
+if [[ -n "${ALERT_EMAIL:-}" ]]; then
+  if command -v mail >/dev/null; then
+    printf "%s
+" "$ALERT_BODY" | mail -s "Log Monitor Alert on $(hostname)" "$ALERT_EMAIL"
+    echo "Alert emailed to $ALERT_EMAIL"
+  else
+    echo "Mail command not available; install mailutils or mutt to enable email alerts."
+  fi
+fi
+
+exit 0
