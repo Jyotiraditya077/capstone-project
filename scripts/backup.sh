@@ -1,23 +1,31 @@
 #!/usr/bin/env bash
 set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../config/config.cfg"
 
+timestamp() { date +%F_%H%M%S; }
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(dirname "$SCRIPT_DIR")"
-BACKUP_DIR="$ROOT_DIR/backups"
-LOG_FILE="$ROOT_DIR/logs/script_logs.txt"
+mkdir -p "$BACKUP_DEST"
 
-SOURCE_DIRS=("$HOME/Documents" "$HOME/Pictures" "$HOME/Desktop")   # <-- edit as needed
-EXCLUDES=("--exclude=.cache" "--exclude=node_modules")
+avail_mb=$(df --output=avail -m "$BACKUP_DEST" 2>/dev/null | tail -1 | tr -d ' ' || echo 9999)
+if (( avail_mb < MIN_FREE_MB )); then
+  echo "ERROR: Not enough free space on $BACKUP_DEST. Available: ${avail_mb}MB. Required: ${MIN_FREE_MB}MB."
+  exit 2
+fi
 
-TIMESTAMP="$(date +'%Y-%m-%d_%H-%M-%S')"
-ARCHIVE="$BACKUP_DIR/backup_$TIMESTAMP.tar.gz"
-# ------------------------
+ARCHIVE="$BACKUP_DEST/backup_$(timestamp).tar.gz"
+echo "Creating backup $ARCHIVE from: $BACKUP_SRC"
+tar -czf "$ARCHIVE" -C / $(realpath --relative-to=/ "$BACKUP_SRC") 2>/dev/null || tar -czf "$ARCHIVE" "$BACKUP_SRC"
 
-mkdir -p "$BACKUP_DIR" "$(dirname "$LOG_FILE")"
+# Rotation
+mapfile -t files < <(ls -1t "$BACKUP_DEST"/backup_*.tar.gz 2>/dev/null || true)
+if (( ${#files[@]} > BACKUP_KEEP )); then
+  to_delete=( "${files[@]:$BACKUP_KEEP}" )
+  for f in "${to_delete[@]}"; do
+    rm -f -- "$f"
+    echo "Deleted $f"
+  done
+fi
 
-log(){ printf "[%s] [backup] %s\n" "$(date '+%F %T')" "$*" | tee -a "$LOG_FILE"; }
-
-log "Starting backup to $ARCHIVE"
-tar -czf "$ARCHIVE" "${EXCLUDES[@]}" "${SOURCE_DIRS[@]}" 2>>"$LOG_FILE"
-log "Backup completed: $ARCHIVE"
+echo "Backup completed: $ARCHIVE"
+exit 0
