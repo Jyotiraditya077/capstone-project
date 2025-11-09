@@ -1,38 +1,28 @@
 #!/usr/bin/env bash
 set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(dirname "$SCRIPT_DIR")"
-LOG_FILE="$ROOT_DIR/logs/script_logs.txt"
-
-mkdir -p "$ROOT_DIR/logs" "$ROOT_DIR/backups"
-
-backups(){ bash "$SCRIPT_DIR/backup.sh"; read -rp "Press Enter to continue..."; }
-update_cleanup(){ bash "$SCRIPT_DIR/update_cleanup.sh"; read -rp "Press Enter to continue..."; }
-monitor(){
-  echo "Starting log monitor (Ctrl+C to stop)..."
-  bash "$SCRIPT_DIR/log_monitor.sh"
-}
-view_logs(){ ${PAGER:-less} "$LOG_FILE"; }
-
-while true; do
-  clear
-  cat <<MENU
-================= System Maintenance Suite =================
-1) Run Backup
-2) Perform System Update & Cleanup
-3) Start Log Monitor (live)
-4) View Script Logs
-5) Exit
-============================================================
-MENU
-  read -rp "Choose an option [1-5]: " opt
-  case "$opt" in
-    1) backups ;;
-    2) update_cleanup ;;
-    3) monitor ;;
-    4) view_logs ;;
-    5) echo "Goodbye!"; exit 0 ;;
-    *) echo "Invalid option"; sleep 1 ;;
+PS3="Select an option: "
+options=(
+  "Run Backup"
+  "Run Update & Cleanup"
+  "Run Log Monitor"
+  "Generate User & Disk Report"
+  "Schedule Daily Backup at 02:00 (cron)"
+  "Exit"
+)
+select opt in "${options[@]}"; do
+  case $REPLY in
+    1) "$SCRIPT_DIR/backup.sh";;
+    2) "$SCRIPT_DIR/update_cleanup.sh";;
+    3) "$SCRIPT_DIR/log_monitor.sh";;
+    4) "$SCRIPT_DIR/user_disk_report.sh";;
+    5)
+      cron_line="0 2 * * * $SCRIPT_DIR/backup.sh >> $SCRIPT_DIR/../reports/cron_backup.log 2>&1"
+      (crontab -l 2>/dev/null | grep -Fv "$SCRIPT_DIR/backup.sh" ; echo "$cron_line") | crontab -
+      echo "Scheduled daily backup at 02:00."
+      ;;
+    6) echo "Goodbye."; break;;
+    *) echo "Invalid option.";;
   esac
 done
