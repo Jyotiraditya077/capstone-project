@@ -1,21 +1,28 @@
 #!/usr/bin/env bash
 set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../config/config.cfg"
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(dirname "$SCRIPT_DIR")"
-LOG_FILE="$ROOT_DIR/logs/script_logs.txt"
+if command -v apt-get >/dev/null; then
+  PM="apt"
+elif command -v dnf >/dev/null; then
+  PM="dnf"
+elif command -v yum >/dev/null; then
+  PM="yum"
+else
+  PM="none"
+fi
 
-log(){ printf "[%s] [update] %s\n" "$(date '+%F %T')" "$*" | tee -a "$LOG_FILE"; }
+echo "Detected package manager: $PM (demo: not performing package updates in sandbox)"
+if [[ "$PM" == "none" ]]; then
+  echo "No supported package manager found or running in restricted environment. Skipping updates."
+else
+  echo "Skipping actual update in demo environment to avoid changes."
+fi
 
-mkdir -p "$(dirname "$LOG_FILE")"
+if command -v journalctl >/dev/null; then
+  echo "Rotating journal (demo skip)"
+fi
 
-# Use apt (Debian/Ubuntu). Switch to dnf/pacman as needed.
-log "Starting system update & cleanup"
-if command -v sudo >/dev/null 2>&1; then SUDO=sudo; else SUDO=""; fi
-
-$SUDO apt-get update        | tee -a "$LOG_FILE"
-$SUDO apt-get -y upgrade    | tee -a "$LOG_FILE"
-$SUDO apt-get -y autoremove | tee -a "$LOG_FILE"
-$SUDO apt-get -y autoclean  | tee -a "$LOG_FILE"
-
-log "Update & cleanup finished"
+echo "Update & cleanup (demo) finished."
+exit 0
